@@ -170,6 +170,7 @@ void SlamGMapping::init()
 
   // The library is pretty chatty
   //gsp_ = new GMapping::GridSlamProcessor(std::cerr);
+  //栅格处理SLAM过程
   gsp_ = new GMapping::GridSlamProcessor();
   ROS_ASSERT(gsp_);
 
@@ -274,6 +275,7 @@ void SlamGMapping::startLiveSlam()
   ss_ = node_.advertiseService("dynamic_map", &SlamGMapping::mapCallback, this);
   scan_filter_sub_ = new message_filters::Subscriber<sensor_msgs::LaserScan>(node_, "scan", 5);
   scan_filter_ = new tf::MessageFilter<sensor_msgs::LaserScan>(*scan_filter_sub_, tf_, odom_frame_, 5);
+  // 通过boost::bind开启两个线程：laserCallback()和 publishLoop()，
   scan_filter_->registerCallback(boost::bind(&SlamGMapping::laserCallback, this, _1));
 
   transform_thread_ = new boost::thread(boost::bind(&SlamGMapping::publishLoop, this, transform_publish_period_));
@@ -394,28 +396,30 @@ SlamGMapping::getOdomPose(GMapping::OrientedPoint& gmap_pose, const ros::Time& t
     ROS_WARN("Failed to compute odom pose, skipping scan (%s)", e.what());
     return false;
   }
-  double yaw = tf::getYaw(odom_pose.getRotation());
+  double yaw = tf::getYaw(odom_pose.getRotation());//获取角度
 
-  gmap_pose = GMapping::OrientedPoint(odom_pose.getOrigin().x(),
+  gmap_pose = GMapping::OrientedPoint(odom_pose.getOrigin().x(),//
                                       odom_pose.getOrigin().y(),
                                       yaw);
   return true;
 }
-
+/////////////////////////initMapper//////////////////////////////////////////
+//  初始化地图
 bool
 SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
 {
   laser_frame_ = scan.header.frame_id;
   // Get the laser's pose, relative to base.
-  tf::Stamped<tf::Pose> ident;
-  tf::Stamped<tf::Transform> laser_pose;
-  ident.setIdentity();
-  ident.frame_id_ = laser_frame_;
-  ident.stamp_ = scan.header.stamp;
+  tf::Stamped<tf::Pose> ident;  //定义位姿
+  tf::Stamped<tf::Transform> laser_pose; //定义激光雷达位姿信息
+  ident.setIdentity();          //设为单位矩阵
+  ident.frame_id_ = laser_frame_; //一般为laser_link
+  ident.stamp_ = scan.header.stamp; //激光雷达时间戳
   try
   {
     tf_.transformPose(base_frame_, ident, laser_pose);
   }
+  // 作用：如果请求的坐标系id之间存在连接，但一个或多个变换已过期，则抛出。
   catch(tf::TransformException e)
   {
     ROS_WARN("Failed to compute laser pose, aborting initialization (%s)",
@@ -424,6 +428,7 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
   }
 
   // create a point 1m above the laser position and transform it into the laser-frame
+  // 在激光位置上方1米处创建一个点，并将其转换为激光帧
   tf::Vector3 v;
   v.setValue(0, 0, 1 + laser_pose.getOrigin().z());
   tf::Stamped<tf::Vector3> up(v, scan.header.stamp,
@@ -441,25 +446,26 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
   }
   
   // gmapping doesnt take roll or pitch into account. So check for correct sensor alignment.
+  // 不考虑滚动或俯仰。因此，检查传感器是否正确对齐
   if (fabs(fabs(up.z()) - 1) > 0.001)
-  {
+  {//“激光器必须安装在平面上！Z坐标必须是1或-1，-1表示雷达倒着
     ROS_WARN("Laser has to be mounted planar! Z-coordinate has to be 1 or -1, but gave: %.5f",
                  up.z());
     return false;
   }
-
+// 获取激光点云数量
   gsp_laser_beam_count_ = scan.ranges.size();
 
   double angle_center = (scan.angle_min + scan.angle_max)/2;
 
-  if (up.z() > 0)
+  if (up.z() > 0)//向上安装
   {
-    do_reverse_range_ = scan.angle_min > scan.angle_max;
+    do_reverse_range_ = scan.angle_min > scan.angle_max;//判断激光长度范围是不是取反了
     centered_laser_pose_ = tf::Stamped<tf::Pose>(tf::Transform(tf::createQuaternionFromRPY(0,0,angle_center),
                                                                tf::Vector3(0,0,0)), ros::Time::now(), laser_frame_);
     ROS_INFO("Laser is mounted upwards.");
   }
-  else
+  else//向下安装
   {
     do_reverse_range_ = scan.angle_min < scan.angle_max;
     centered_laser_pose_ = tf::Stamped<tf::Pose>(tf::Transform(tf::createQuaternionFromRPY(M_PI,0,-angle_center),
@@ -468,9 +474,10 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
   }
 
   // Compute the angles of the laser from -x to x, basically symmetric and in increasing order
-  laser_angles_.resize(scan.ranges.size());
+  laser_angles_.resize(scan.ranges.size());//分配激光雷达角度容器空间
   // Make sure angles are started so that they are centered
-  double theta = - std::fabs(scan.angle_min - scan.angle_max)/2;
+  double theta = - std::fabs(scan.angle_min - scan.angle_max)/2;//求出中间角度的负数即使其实起始位姿角度
+  //将点云角度从theta起始角度开始,然后后面每一个点都添加角度增量
   for(unsigned int i=0; i<scan.ranges.size(); ++i)
   {
     laser_angles_[i]=theta;
@@ -482,13 +489,14 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
   ROS_DEBUG("Laser angles in top-down centered laser-frame: min: %.3f max: %.3f inc: %.3f", laser_angles_.front(),
             laser_angles_.back(), std::fabs(scan.angle_increment));
 
-  GMapping::OrientedPoint gmap_pose(0, 0, 0);
+  GMapping::OrientedPoint gmap_pose(0, 0, 0);//初始化姿态
 
   // setting maxRange and maxUrange here so we can set a reasonable default
-  ros::NodeHandle private_nh_("~");
-  if(!private_nh_.getParam("maxRange", maxRange_))
+  // 创建话题句柄
+  ros::NodeHandle private_nh_("~");  //显示话题的Publisher
+  if(!private_nh_.getParam("maxRange", maxRange_))//获取话题信息
     maxRange_ = scan.range_max - 0.01;
-  if(!private_nh_.getParam("maxUrange", maxUrange_))
+  if(!private_nh_.getParam("maxUrange", maxUrange_))//
     maxUrange_ = maxRange_;
 
   // The laser must be called "FLASER".
@@ -496,40 +504,45 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
   // assumption that GMapping requires a positive angle increment.  If the
   // actual increment is negative, we'll swap the order of ranges before
   // feeding each scan to GMapping.
-  gsp_laser_ = new GMapping::RangeSensor("FLASER",
-                                         gsp_laser_beam_count_,
-                                         fabs(scan.angle_increment),
-                                         gmap_pose,
-                                         0.0,
-                                         maxRange_);
-  ROS_ASSERT(gsp_laser_);
+  // 创建RangeSensor对象
+  gsp_laser_ = new GMapping::RangeSensor("FLASER",//激光名称
+                                         gsp_laser_beam_count_,//激光点数量
+                                         fabs(scan.angle_increment),//角度跨度
+                                         gmap_pose,//初始位姿
+                                         0.0,     
+                                         maxRange_);//最大长度
+  ROS_ASSERT(gsp_laser_);//判断是否创建指针成功
 
   GMapping::SensorMap smap;
+  // make_pair将元素组成结构体
   smap.insert(make_pair(gsp_laser_->getName(), gsp_laser_));
   gsp_->setSensorMap(smap);
 
-  gsp_odom_ = new GMapping::OdometrySensor(odom_frame_);
+  gsp_odom_ = new GMapping::OdometrySensor(odom_frame_);//创建里程计指针对象
   ROS_ASSERT(gsp_odom_);
 
 
   /// @todo Expose setting an initial pose
+  //设置初始位姿
   GMapping::OrientedPoint initialPose;
+  // 获取里程计位姿
   if(!getOdomPose(initialPose, scan.header.stamp))
   {
     ROS_WARN("Unable to determine inital pose of laser! Starting point will be set to zero.");
     initialPose = GMapping::OrientedPoint(0.0, 0.0, 0.0);
   }
-
+// 设置匹配参数
   gsp_->setMatchingParameters(maxUrange_, maxRange_, sigma_,
                               kernelSize_, lstep_, astep_, iterations_,
                               lsigma_, ogain_, lskip_);
-
+// 设置模型参数
   gsp_->setMotionModelParameters(srr_, srt_, str_, stt_);
+  // 设置更新距离
   gsp_->setUpdateDistances(linearUpdate_, angularUpdate_, resampleThreshold_);
-  gsp_->setUpdatePeriod(temporalUpdate_);
-  gsp_->setgenerateMap(false);
+  gsp_->setUpdatePeriod(temporalUpdate_);//设置更新周期
+  gsp_->setgenerateMap(false);//生成地图
   gsp_->GridSlamProcessor::init(particles_, xmin_, ymin_, xmax_, ymax_,
-                                delta_, initialPose);
+                                delta_, initialPose);//栅格地图SLAM过程初始化
   gsp_->setllsamplerange(llsamplerange_);
   gsp_->setllsamplestep(llsamplestep_);
   /// @todo Check these calls; in the gmapping gui, they use
@@ -537,7 +550,7 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
   /// lasamplerange.  It was probably a typo, but who knows.
   gsp_->setlasamplerange(lasamplerange_);
   gsp_->setlasamplestep(lasamplestep_);
-  gsp_->setminimumScore(minimum_score_);
+  gsp_->setminimumScore(minimum_score_);//得分初始化
 
   // Call the sampling function once to set the seed.
   GMapping::sampleGaussian(1,seed_);
@@ -546,20 +559,22 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
 
   return true;
 }
+/////////////////////////initMapper//////////////////////////////////////////
 
+///////////////////////////addScan//////////////////////////////////////////////
 bool
 SlamGMapping::addScan(const sensor_msgs::LaserScan& scan, GMapping::OrientedPoint& gmap_pose)
 {
-  if(!getOdomPose(gmap_pose, scan.header.stamp))
+  if(!getOdomPose(gmap_pose, scan.header.stamp))//根据激光点云头时间,获取里程计位姿
      return false;
   
-  if(scan.ranges.size() != gsp_laser_beam_count_)
+  if(scan.ranges.size() != gsp_laser_beam_count_)//激光点云数量不符合实际硬件参数,停止
     return false;
 
   // GMapping wants an array of doubles...
-  double* ranges_double = new double[scan.ranges.size()];
+  double* ranges_double = new double[scan.ranges.size()];//分配激光空间
   // If the angle increment is negative, we have to invert the order of the readings.
-  if (do_reverse_range_)
+  if (do_reverse_range_)//激光装反了的
   {
     ROS_DEBUG("Inverting scan");
     int num_ranges = scan.ranges.size();
@@ -567,23 +582,24 @@ SlamGMapping::addScan(const sensor_msgs::LaserScan& scan, GMapping::OrientedPoin
     {
       // Must filter out short readings, because the mapper won't
       if(scan.ranges[num_ranges - i - 1] < scan.range_min)
-        ranges_double[i] = (double)scan.range_max;
+        ranges_double[i] = (double)scan.range_max;//最大值即是异常值
       else
-        ranges_double[i] = (double)scan.ranges[num_ranges - i - 1];
+        ranges_double[i] = (double)scan.ranges[num_ranges - i - 1];//否则逆序存储
     }
   } else 
   {
-    for(unsigned int i=0; i < scan.ranges.size(); i++)
+    for(unsigned int i=0; i < scan.ranges.size(); i++)//正着安转激光雷达
     {
       // Must filter out short readings, because the mapper won't
-      if(scan.ranges[i] < scan.range_min)
+      if(scan.ranges[i] < scan.range_min)   //比最小测距距离还小,则定义为最大值,后面清理
         ranges_double[i] = (double)scan.range_max;
       else
-        ranges_double[i] = (double)scan.ranges[i];
+        ranges_double[i] = (double)scan.ranges[i];//正序保存
     }
   }
-
-  GMapping::RangeReading reading(scan.ranges.size(),
+  //  读取打印了时间的激光点云数据
+  //RangeReading(unsigned int n_beams, const double* d, const RangeSensor* rs, double time=0);
+  GMapping::RangeReading reading(scan.ranges.size(),//激光点数量
                                  ranges_double,
                                  gsp_laser_,
                                  scan.header.stamp.toSec());
@@ -592,7 +608,7 @@ SlamGMapping::addScan(const sensor_msgs::LaserScan& scan, GMapping::OrientedPoin
   // need to keep our array around.
   delete[] ranges_double;
 
-  reading.setPose(gmap_pose);
+  reading.setPose(gmap_pose);//将m_pose设置为gmap_pose
 
   /*
   ROS_DEBUG("scanpose (%.3f): %.3f %.3f %.3f\n",
@@ -602,10 +618,17 @@ SlamGMapping::addScan(const sensor_msgs::LaserScan& scan, GMapping::OrientedPoin
             gmap_pose.theta);
             */
   ROS_DEBUG("processing scan");
-
-  return gsp_->processScan(reading);
+//   GMapping::GridSlamProcessor* gsp_;  //栅格处理SLAM过程
+// processScan返回bool量
+  return gsp_->processScan(reading);//-------------------------------核心函数----------
 }
+////////////////////////////////////addScan////////////////////////////////////////////
 
+//////////////////////////////////laserCallback/////////////////////////////////////
+//主要有三个函数.
+// initMapper(*scan))//进行参数初始化
+// addScan(*scan, odom_pose))//调用openslam_gmappinig核心算法
+//  updateMap(*scan);//对地图进行更新
 void
 SlamGMapping::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 {
@@ -616,45 +639,55 @@ SlamGMapping::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
   static ros::Time last_map_update(0,0);
 
   // We can't initialize the mapper until we've got the first scan
+  //没有获取激光点云信息需要进行初始化
   if(!got_first_scan_)
   {
-    if(!initMapper(*scan))
+    if(!initMapper(*scan))//进行参数初始化------------------1\initMapper----------------
       return;
     got_first_scan_ = true;
   }
 
-  GMapping::OrientedPoint odom_pose;
+  GMapping::OrientedPoint odom_pose;//定义里程计位姿信息
 
-  if(addScan(*scan, odom_pose))
+  if(addScan(*scan, odom_pose))//调用openslam_gmappinig核心算法 叠加激光---------------------2\addScan----------------------
   {
     ROS_DEBUG("scan processed");
-
+// 发布坐标位姿信息
     GMapping::OrientedPoint mpose = gsp_->getParticles()[gsp_->getBestParticleIndex()].pose;
     ROS_DEBUG("new best pose: %.3f %.3f %.3f", mpose.x, mpose.y, mpose.theta);
     ROS_DEBUG("odom pose: %.3f %.3f %.3f", odom_pose.x, odom_pose.y, odom_pose.theta);
     ROS_DEBUG("correction: %.3f %.3f %.3f", mpose.x - odom_pose.x, mpose.y - odom_pose.y, mpose.theta - odom_pose.theta);
-
+    // 变换得到雷达到地图矩阵
     tf::Transform laser_to_map = tf::Transform(tf::createQuaternionFromRPY(0, 0, mpose.theta), tf::Vector3(mpose.x, mpose.y, 0.0)).inverse();
+    // 变换得到 里程计到激光雷达矩阵
     tf::Transform odom_to_laser = tf::Transform(tf::createQuaternionFromRPY(0, 0, odom_pose.theta), tf::Vector3(odom_pose.x, odom_pose.y, 0.0));
 
-    map_to_odom_mutex_.lock();
-    map_to_odom_ = (odom_to_laser * laser_to_map).inverse();
-    map_to_odom_mutex_.unlock();
-
+    map_to_odom_mutex_.lock();// 线程锁住
+    map_to_odom_ = (odom_to_laser * laser_to_map).inverse();//计算世界到里程计坐标
+    map_to_odom_mutex_.unlock();//线程解开
+    //如果当前激光雷达时间与上一桢时间超过更新阈值或者获取到地图,就更新地图
     if(!got_map_ || (scan->header.stamp - last_map_update) > map_update_interval_)
     {
-      updateMap(*scan);
-      last_map_update = scan->header.stamp;
+      updateMap(*scan);//对地图进行更新----------------------3\updateMap---------------------------
+      last_map_update = scan->header.stamp;//更新上一桢时间戳 
       ROS_DEBUG("Updated the map");
     }
   } else
     ROS_DEBUG("cannot process scan");
 }
+///////////////////////////////:laserCallback/////////////////////////////////
+///////////////////////////////computePoseEntropy()///////////////////////////////////
 
+/**
+ * @brief 计算熵,先求出总概率,讲每个粒子概率归一化pi,代入 熵+=pi * log(pi)
+ * 
+ * @return ** double 
+ */
 double
 SlamGMapping::computePoseEntropy()
 {
   double weight_total=0.0;
+  // 循环读取粒子,获取粒子权重,并且求和
   for(std::vector<GMapping::GridSlamProcessor::Particle>::const_iterator it = gsp_->getParticles().begin();
       it != gsp_->getParticles().end();
       ++it)
@@ -662,37 +695,50 @@ SlamGMapping::computePoseEntropy()
     weight_total += it->weight;
   }
   double entropy = 0.0;
+  //计算每个粒子的熵,并求和
   for(std::vector<GMapping::GridSlamProcessor::Particle>::const_iterator it = gsp_->getParticles().begin();
       it != gsp_->getParticles().end();
       ++it)
   {
     if(it->weight/weight_total > 0.0)
+      // 先归一化概率Pi
+      //  en=-p(i)*logp(i);  
+      // entropy+=en;  
       entropy += it->weight/weight_total * log(it->weight/weight_total);
   }
   return -entropy;
 }
+//////////////////////////////////////////////////////////////////////////
 
+/**
+ * @brief 函数的主要功能就是根据最优粒子的地图数据更新最终栅格地图中各个单元的占用概率
+ * 该函数只有一个参数scan，它是激光的扫描数据。 并且在更新地图的时候，加了一把锁。
+ * @param scan 
+ * @return ** void 
+ */
 void
 SlamGMapping::updateMap(const sensor_msgs::LaserScan& scan)
 {
   ROS_DEBUG("Update map");
-  boost::mutex::scoped_lock map_lock (map_mutex_);
-  GMapping::ScanMatcher matcher;
-
+  boost::mutex::scoped_lock map_lock (map_mutex_);//创建更新地图的线程锁
+  GMapping::ScanMatcher matcher;//创建扫描匹配器
+  //配置扫描匹配器 参数
   matcher.setLaserParameters(scan.ranges.size(), &(laser_angles_[0]),
                              gsp_laser_->getPose());
-
+//激光雷达最大测距
   matcher.setlaserMaxRange(maxRange_);
+  // 激光雷达的使用距离.源码中默认等于maxRange，
   matcher.setusableRange(maxUrange_);
   matcher.setgenerateMap(true);
-
+//获取最好粒子 m_particles
   GMapping::GridSlamProcessor::Particle best =
           gsp_->getParticles()[gsp_->getBestParticleIndex()];
-  std_msgs::Float64 entropy;
-  entropy.data = computePoseEntropy();
+  std_msgs::Float64 entropy;//创建熵
+  // 计算熵,先求出总概率,讲每个粒子概率归一化pi,代入 熵+=pi * log(pi)
+  entropy.data = computePoseEntropy();//计算熵值
   if(entropy.data > 0.0)
     entropy_publisher_.publish(entropy);
-
+//如果没有获取到地图信息,重新设置地图信息
   if(!got_map_) {
     map_.map.info.resolution = delta_;
     map_.map.info.origin.position.x = 0.0;
@@ -705,13 +751,14 @@ SlamGMapping::updateMap(const sensor_msgs::LaserScan& scan)
   } 
 
   GMapping::Point center;
-  center.x=(xmin_ + xmax_) / 2.0;
+  center.x=(xmin_ + xmax_) / 2.0;//中心
   center.y=(ymin_ + ymax_) / 2.0;
-
+//根据参数创建地图
   GMapping::ScanMatcherMap smap(center, xmin_, ymin_, xmax_, ymax_, 
                                 delta_);
 
   ROS_DEBUG("Trajectory tree:");
+  //获取节点,并往根节点搜索
   for(GMapping::GridSlamProcessor::TNode* n = best.node;
       n;
       n = n->parent)
@@ -725,12 +772,13 @@ SlamGMapping::updateMap(const sensor_msgs::LaserScan& scan)
       ROS_DEBUG("Reading is NULL");
       continue;
     }
-    matcher.invalidateActiveArea();
-    matcher.computeActiveArea(smap, n->pose, &((*n->reading)[0]));
-    matcher.registerScan(smap, n->pose, &((*n->reading)[0]));
+    matcher.invalidateActiveArea();//计算激活区域,标记位
+    matcher.computeActiveArea(smap, n->pose, &((*n->reading)[0]));//计算激活区域，通过激光雷达的数据计算出来哪个地图栅格应该要被更新了。
+    matcher.registerScan(smap, n->pose, &((*n->reading)[0]));//计算激光束上所有点的熵,如果不更新地图,默认熵为0,只更新hit
   }
 
   // the map may have expanded, so resize ros message as well
+  //如果地图已经扩展,需要重新设置地图的参数
   if(map_.map.info.width != (unsigned int) smap.getMapSizeX() || map_.map.info.height != (unsigned int) smap.getMapSizeY()) {
 
     // NOTE: The results of ScanMatcherMap::getSize() are different from the parameters given to the constructor
@@ -751,7 +799,7 @@ SlamGMapping::updateMap(const sensor_msgs::LaserScan& scan)
 
     ROS_DEBUG("map origin: (%f, %f)", map_.map.info.origin.position.x, map_.map.info.origin.position.y);
   }
-
+//计算地图栅格占用概率阈,根据概率阈值,设定为-1,100,0.三种值
   for(int x=0; x < smap.getMapSizeX(); x++)
   {
     for(int y=0; y < smap.getMapSizeY(); y++)
@@ -771,16 +819,17 @@ SlamGMapping::updateMap(const sensor_msgs::LaserScan& scan)
         map_.map.data[MAP_IDX(map_.map.info.width, x, y)] = 0;
     }
   }
-  got_map_ = true;
+  got_map_ = true;//标记地图已经构建
 
   //make sure to set the header information on the map
+  //获取当前时间,map id,给地图打上信息.发布地图信息
   map_.map.header.stamp = ros::Time::now();
   map_.map.header.frame_id = tf_.resolve( map_frame_ );
 
   sst_.publish(map_.map);
   sstm_.publish(map_.map.info);
 }
-
+////////////////////////////////////////////////////////////////////
 bool 
 SlamGMapping::mapCallback(nav_msgs::GetMap::Request  &req,
                           nav_msgs::GetMap::Response &res)
