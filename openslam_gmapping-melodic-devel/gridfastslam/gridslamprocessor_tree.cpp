@@ -58,7 +58,7 @@ GridSlamProcessor::TNodeVector GridSlamProcessor::getTrajectories() const{
 	}
 	
 	for (ParticleVector::const_iterator it=m_particles.begin(); it!=m_particles.end(); it++){
-		TNode* newnode=new TNode(* (it->node) );
+		TNode* newnode=new TNode(* (it->node) );//获取每个粒子的子节点
 		
 		v.push_back(newnode);
 		assert(newnode->childs==0);
@@ -201,7 +201,7 @@ void GridSlamProcessor::integrateScanSequence(GridSlamProcessor::TNode* node){
 //END State Save/Restore
 
 //BEGIN
-
+// 更新树的权重
 void  GridSlamProcessor::updateTreeWeights(bool weightsAlreadyNormalized){
 
   if (!weightsAlreadyNormalized) {

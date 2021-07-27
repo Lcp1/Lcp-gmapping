@@ -89,7 +89,7 @@ namespace GMapping {
       /**constructs a particle, given a map
 	 @param map: the particle map
       */
-      Particle(const ScanMatcherMap& map);//初始化各个变量值
+      Particle(const ScanMatcherMap& map);//初始化金字塔地图
 
       /** @returns the weight of a particle */
       inline operator double() const {return weight;}
@@ -105,25 +105,25 @@ namespace GMapping {
       OrientedPoint pose;
 
       /** The pose of the robot at the previous time frame (used for computing thr odometry displacements) */
-      OrientedPoint previousPose;
+      OrientedPoint previousPose;//粒子上一时刻的位姿
 
       /** The weight of the particle */
       double weight;
 
       /** The cumulative weight of the particle */
-      double weightSum;
+      double weightSum;//weightSum= gweight
 
       double gweight;
 
       /** The index of the previous particle in the trajectory tree */
-      int previousIndex;
+      int previousIndex;//父节点
 
       /** Entry to the trajectory tree */
-      TNode* node; 
+      TNode* node; //轨迹中的一个节点
     };
 	
     
-    typedef std::vector<Particle> ParticleVector;
+    typedef std::vector<Particle> ParticleVector;//粒子容器,集合,默认30个
     
     /** Constructs a GridSlamProcessor, initialized with the default parameters */
     GridSlamProcessor();
@@ -253,7 +253,7 @@ namespace GMapping {
     double period_;
     
     /**the particles*/
-    ParticleVector m_particles;
+    ParticleVector m_particles;//粒子容器,集合
 
     /**the particle indexes after resampling (internally used)*/
     // 重采样后的粒子索引（内部使用）

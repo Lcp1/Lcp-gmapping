@@ -101,33 +101,33 @@ template <class Cell, class Storage, const bool isClass>
 Map<Cell,Storage,isClass>::Map(int mapSizeX, int mapSizeY, double delta):
 	m_storage(mapSizeX, mapSizeY){
 	m_worldSizeX=mapSizeX * delta;
-	m_worldSizeY=mapSizeY * delta;
-	m_delta=delta;
-	m_center=Point(0.5*m_worldSizeX, 0.5*m_worldSizeY);
-	m_sizeX2=m_mapSizeX>>1;
+	m_worldSizeY=mapSizeY * delta;//世界地图分辨率大小
+	m_delta=delta;//分辨率
+	m_center=Point(0.5*m_worldSizeX, 0.5*m_worldSizeY);//世界坐标中心
+	m_sizeX2=m_mapSizeX>>1;//地图的一半为世界x值的最大值
 	m_sizeY2=m_mapSizeY>>1;
 }
 
 template <class Cell, class Storage, const bool isClass>
 Map<Cell,Storage,isClass>::Map(const Point& center, double worldSizeX, double worldSizeY, double delta):
 	m_storage((int)ceil(worldSizeX/delta), (int)ceil(worldSizeY/delta)){
-	m_center=center;
-	m_worldSizeX=worldSizeX;
+	m_center=center;//世界坐标中心
+	m_worldSizeX=worldSizeX;//世界坐标范围
 	m_worldSizeY=worldSizeY;
-	m_delta=delta;
-	m_mapSizeX=m_storage.getXSize()<<m_storage.getPatchSize();
+	m_delta=delta;//世界分辨率
+	m_mapSizeX=m_storage.getXSize()<<m_storage.getPatchSize();//获取patch大小
 	m_mapSizeY=m_storage.getYSize()<<m_storage.getPatchSize();
-	m_sizeX2=m_mapSizeX>>1;
+	m_sizeX2=m_mapSizeX>>1;//地图方位转世界坐标范围,缩减一半
 	m_sizeY2=m_mapSizeY>>1;
 }
 
 template <class Cell, class Storage, const bool isClass>
 Map<Cell,Storage,isClass>::Map(const Point& center, double xmin, double ymin, double xmax, double ymax, double delta):
 	m_storage((int)ceil((xmax-xmin)/delta), (int)ceil((ymax-ymin)/delta)){
-	m_center=center;
-	m_worldSizeX=xmax-xmin;
+	m_center=center;//世界坐标中心
+	m_worldSizeX=xmax-xmin;//世界坐标范围
 	m_worldSizeY=ymax-ymin;
-	m_delta=delta;
+	m_delta=delta;//世界分辨率
 	m_mapSizeX=m_storage.getXSize()<<m_storage.getPatchSize();
 	m_mapSizeY=m_storage.getYSize()<<m_storage.getPatchSize();
 	m_sizeX2=(int)round((m_center.x-xmin)/m_delta);
@@ -136,14 +136,16 @@ Map<Cell,Storage,isClass>::Map(const Point& center, double xmin, double ymin, do
 		
 template <class Cell, class Storage, const bool isClass>
 void Map<Cell,Storage,isClass>::resize(double xmin, double ymin, double xmax, double ymax){
-	IntPoint imin=world2map(xmin, ymin);
+	IntPoint imin=world2map(xmin, ymin);//世界坐标范围转地图坐标范围
 	IntPoint imax=world2map(xmax, ymax);
 	int pxmin, pymin, pxmax, pymax;
-	pxmin=(int)floor((float)imin.x/(1<<m_storage.getPatchMagnitude()));
+	//最小值比例
+	pxmin=(int)floor((float)imin.x/(1<<m_storage.getPatchMagnitude()));//m_delta=getPatchMagnitude()地图 
+	//最大值比例
 	pxmax=(int)ceil((float)imax.x/(1<<m_storage.getPatchMagnitude()));
 	pymin=(int)floor((float)imin.y/(1<<m_storage.getPatchMagnitude()));
 	pymax=(int)ceil((float)imax.y/(1<<m_storage.getPatchMagnitude()));
-	m_storage.resize(pxmin, pymin, pxmax, pymax);
+	m_storage.resize(pxmin, pymin, pxmax, pymax);//初始化地图结构
 	m_mapSizeX=m_storage.getXSize()<<m_storage.getPatchSize();
 	m_mapSizeY=m_storage.getYSize()<<m_storage.getPatchSize();
 	m_worldSizeX=xmax-xmin;
@@ -210,7 +212,7 @@ Cell& Map<Cell,Storage,isClass>::cell(const Point& p) {
 	// this will never happend. Just to satify the compiler..
 	return m_storage.cell(ip);
 }
-
+//直接评价地图坐标是不是占用的的情况,是则返回地图栅格状态
 template <class Cell, class Storage, const bool isClass>
   const Cell& Map<Cell,Storage,isClass>::cell(const IntPoint& p) const {
   AccessibilityState s=m_storage.cellState(p);
@@ -219,19 +221,21 @@ template <class Cell, class Storage, const bool isClass>
     return m_storage.cell(p);
   return m_unknown;
 }
-
+//将世界坐标点存成地图点,占用的的情况,是则返回地图栅格状态 
 template <class Cell, class Storage, const bool isClass>
 const  Cell& Map<Cell,Storage,isClass>::cell(const Point& p) const {
   IntPoint ip=world2map(p);
   AccessibilityState s=m_storage.cellState(ip);
   //if (! s&Inside) assert(0);
-  if (s&Allocated)	 
+  if (s&Allocated)	//求与,如s是被分配的,存储到地图
     return m_storage.cell(ip);
-  return  m_unknown;
+  return  m_unknown;//否则为未知区域
 }
 
 
 //FIXME check why the last line of the map is corrupted.
+// 请检查地图的最后一行为何损坏。
+//读取最后一个二维方块
 template <class Cell, class Storage, const bool isClass>
 DoubleArray2D* Map<Cell,Storage,isClass>::toDoubleArray() const{
         DoubleArray2D* darr=new DoubleArray2D(getMapSizeX()-1, getMapSizeY()-1);
@@ -247,7 +251,7 @@ DoubleArray2D* Map<Cell,Storage,isClass>::toDoubleArray() const{
 template <class Cell, class Storage, const bool isClass>
 Map<double, DoubleArray2D, false>* Map<Cell,Storage,isClass>::toDoubleMap() const{
 //FIXME size the map so that m_center will be setted accordingly
-        Point pmin=map2world(IntPoint(0,0));
+    Point pmin=map2world(IntPoint(0,0));
 	Point pmax=map2world(getMapSizeX()-1,getMapSizeY()-1);
 	Point center=(pmax+pmin)*0.5;
 	Map<double, DoubleArray2D, false>*  plainMap=new Map<double, DoubleArray2D, false>(center, (pmax-pmin).x, (pmax-pmin).y, getDelta());

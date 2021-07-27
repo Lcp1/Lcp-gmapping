@@ -47,7 +47,7 @@ autoptr<X>::autoptr(const autoptr<X>& ap){
 
 template <class X>
 autoptr<X>& autoptr<X>::operator=(const autoptr<X>& ap){
-	reference* ref=ap.m_reference;
+	reference* ref=ap.m_reference;//首先使用一个临时指针ref记录右值的m_reference
 	if (m_reference==ref){
 		return *this;
 	}

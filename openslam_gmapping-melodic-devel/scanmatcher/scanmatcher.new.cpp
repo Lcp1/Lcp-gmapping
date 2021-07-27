@@ -47,7 +47,7 @@ void ScanMatcher::invalidateActiveArea(){
 	m_activeAreaComputed=false;//设为计算动态区域标记位
 }
 /**
- * @brief 第一次扫描，count==0时，如果激光观测数据超出了范围，更新栅格地图的范围。同时确定有效区域。
+ * @brief 第一次扫描，count==0时，如果激光观测数据超出了范围，更新各个粒子栅格地图的范围。同时确定有效区域。
  * 
  * @param map 地图
  * @param p   机器人位姿
@@ -57,7 +57,7 @@ void ScanMatcher::invalidateActiveArea(){
 void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p, const double* readings){
 	if (m_activeAreaComputed)
 		return;
-	HierarchicalArray2D<PointAccumulator>::PointSet activeArea;
+	HierarchicalArray2D<PointAccumulator>::PointSet activeArea;//定义金字塔点集合
 	OrientedPoint lp=p;//机器人位姿
 	lp.x+=cos(p.theta)*m_laserPose.x-sin(p.theta)*m_laserPose.y;//计算雷达在世界的坐标
 	lp.y+=sin(p.theta)*m_laserPose.x+cos(p.theta)*m_laserPose.y;
@@ -98,7 +98,7 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
 			phit.y+=*r*sin(lp.theta+*angle);
 			IntPoint p1=map.world2map(phit);//点云坐标由世界坐标转栅格坐标
 			assert(p1.x>=0 && p1.y>=0);//合法值判断
-			IntPoint cp=map.storage().patchIndexes(p1);
+			IntPoint cp=map.storage().patchIndexes(p1);//返回p1坐标对应的序号索引
 			assert(cp.x>=0 && cp.y>=0);
 			activeArea.insert(cp);
 			
@@ -106,7 +106,7 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
 		// 这将在映射的活动区域中分配未分配的单元格
 	//this allocates the unallocated cells in the active area of the map
 	//cout << "activeArea::size() " << activeArea.size() << endl;
-	map.storage().setActiveArea(activeArea, true);//关键---------将存储地图不知道激活区域
+	map.storage().setActiveArea(activeArea, true);//关键---------将存储地图不知道激活区域.更新m_cell
 	m_activeAreaComputed=true;
 }
 

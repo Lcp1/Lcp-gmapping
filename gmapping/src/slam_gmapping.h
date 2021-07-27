@@ -72,7 +72,7 @@ class SlamGMapping
     tf::MessageFilter<sensor_msgs::LaserScan>* scan_filter_;
     tf::TransformBroadcaster* tfB_;
 
-    GMapping::GridSlamProcessor* gsp_;  //栅格处理SLAM过程
+    GMapping::GridSlamProcessor* gsp_;  //栅格处理SLAM过程,包括粒子的所有数据
     GMapping::RangeSensor* gsp_laser_;
     // The angles in the laser, going from -x to x (adjustment is made to get the laser between
     // symmetrical bounds as that's what gmapping expects)

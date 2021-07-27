@@ -187,9 +187,10 @@ inline double ScanMatcher::score(const ScanMatcherMap& map, const OrientedPoint&
 			//AccessibilityState s=map.storage().cellState(pr);
 			//if (s&Inside && s&Allocated){
 				//根据坐标对应栅格,//PointAccumulator将击中的点位置叠加,并且求均值
-				const PointAccumulator& cell=map.cell(pr);//记录击中的坐标值
+				const PointAccumulator& cell=map.cell(pr);//记录击中的坐标值，直接引用cell，指向pr坐标的map.cell(pr)
 				const PointAccumulator& fcell=map.cell(pf);//记录空闲坐标值
 				if (((double)cell )> m_fullnessThreshold && ((double)fcell )<m_fullnessThreshold){//m_fullnessThreshold =0.1
+				// 	求phit障碍点与均值的误差
 					Point mu=phit-cell.mean();//mean 1./n*Point(acc.x, acc.y)其中cell的坐标计算如下，n为被击中的次数，acc.x和acc.y是击中的累加值：
 					if (!found){//第一次时候将bestMu=mu
 						bestMu=mu;

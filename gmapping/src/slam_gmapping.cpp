@@ -137,7 +137,7 @@ Initial map dimensions and resolution:
 #define foreach BOOST_FOREACH
 
 // compute linear index for given map coords
-#define MAP_IDX(sx, i, j) ((sx) * (j) + (i))
+#define MAP_IDX(sx, i, j) ((sx) * (j) + (i))//表示序号
 
 SlamGMapping::SlamGMapping():
   map_to_odom_(tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ))),
@@ -489,7 +489,7 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
   ROS_DEBUG("Laser angles in top-down centered laser-frame: min: %.3f max: %.3f inc: %.3f", laser_angles_.front(),
             laser_angles_.back(), std::fabs(scan.angle_increment));
 
-  GMapping::OrientedPoint gmap_pose(0, 0, 0);//初始化姿态
+  GMapping::OrientedPoint gmap_pose(0, 0, 0);//初始化姿态---------------------------------------------------------------初始位姿
 
   // setting maxRange and maxUrange here so we can set a reasonable default
   // 创建话题句柄
@@ -542,7 +542,7 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
   gsp_->setUpdatePeriod(temporalUpdate_);//设置更新周期
   gsp_->setgenerateMap(false);//生成地图
   gsp_->GridSlamProcessor::init(particles_, xmin_, ymin_, xmax_, ymax_,
-                                delta_, initialPose);//栅格地图SLAM过程初始化
+                                delta_, initialPose);//就是读取参数来使得栅格地图SLAM过程初始化-------------------------------主要初始化地图
   gsp_->setllsamplerange(llsamplerange_);
   gsp_->setllsamplestep(llsamplestep_);
   /// @todo Check these calls; in the gmapping gui, they use
@@ -562,6 +562,15 @@ SlamGMapping::initMapper(const sensor_msgs::LaserScan& scan)
 /////////////////////////initMapper//////////////////////////////////////////
 
 ///////////////////////////addScan//////////////////////////////////////////////
+
+/**
+ * @brief 将激光点云数据按照一定顺序存储到容器,
+ * 
+ * @param scan    激光数据
+ * @param gmap_pose 里程计信息
+ * @return true 
+ * @return false 
+ */
 bool
 SlamGMapping::addScan(const sensor_msgs::LaserScan& scan, GMapping::OrientedPoint& gmap_pose)
 {
@@ -574,6 +583,7 @@ SlamGMapping::addScan(const sensor_msgs::LaserScan& scan, GMapping::OrientedPoin
   // GMapping wants an array of doubles...
   double* ranges_double = new double[scan.ranges.size()];//分配激光空间
   // If the angle increment is negative, we have to invert the order of the readings.
+  //根据初始化函数的激光雷达正反安转的判断,来按照不同顺序存储点云数据
   if (do_reverse_range_)//激光装反了的
   {
     ROS_DEBUG("Inverting scan");
@@ -582,7 +592,7 @@ SlamGMapping::addScan(const sensor_msgs::LaserScan& scan, GMapping::OrientedPoin
     {
       // Must filter out short readings, because the mapper won't
       if(scan.ranges[num_ranges - i - 1] < scan.range_min)
-        ranges_double[i] = (double)scan.range_max;//最大值即是异常值
+        ranges_double[i] = (double)scan.range_max;//最大值即是异常值,后期会过滤掉
       else
         ranges_double[i] = (double)scan.ranges[num_ranges - i - 1];//否则逆序存储
     }
@@ -640,9 +650,9 @@ SlamGMapping::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 
   // We can't initialize the mapper until we've got the first scan
   //没有获取激光点云信息需要进行初始化
-  if(!got_first_scan_)
+  if(!got_first_scan_)//初始时候got_first_scan_默认为0
   {
-    if(!initMapper(*scan))//进行参数初始化------------------1\initMapper----------------
+    if(!initMapper(*scan))//进行参数初始化激光数据,方向,距离判断正负------------------1\initMapper----------------
       return;
     got_first_scan_ = true;
   }
@@ -653,7 +663,7 @@ SlamGMapping::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
   {
     ROS_DEBUG("scan processed");
 // 发布坐标位姿信息
-    GMapping::OrientedPoint mpose = gsp_->getParticles()[gsp_->getBestParticleIndex()].pose;
+    GMapping::OrientedPoint mpose = gsp_->getParticles()[gsp_->getBestParticleIndex()].pose;//提取最高权重粒子,获取当前位姿
     ROS_DEBUG("new best pose: %.3f %.3f %.3f", mpose.x, mpose.y, mpose.theta);
     ROS_DEBUG("odom pose: %.3f %.3f %.3f", odom_pose.x, odom_pose.y, odom_pose.theta);
     ROS_DEBUG("correction: %.3f %.3f %.3f", mpose.x - odom_pose.x, mpose.y - odom_pose.y, mpose.theta - odom_pose.theta);
@@ -713,6 +723,9 @@ SlamGMapping::computePoseEntropy()
 /**
  * @brief 函数的主要功能就是根据最优粒子的地图数据更新最终栅格地图中各个单元的占用概率
  * 该函数只有一个参数scan，它是激光的扫描数据。 并且在更新地图的时候，加了一把锁。
+ * updateMap函数里会获取权重最大的粒子，然后遍历该粒子的整个运动轨迹，
+ * 并用轨迹上的各个点携带的激光数据生成地图。因为下次选中的粒子可能不是原来的，
+ * 所以这里每次都会找到权重最大的粒子然后重新生成地图，发布出去。
  * @param scan 
  * @return ** void 
  */
@@ -758,7 +771,7 @@ SlamGMapping::updateMap(const sensor_msgs::LaserScan& scan)
                                 delta_);
 
   ROS_DEBUG("Trajectory tree:");
-  //获取节点,并往根节点搜索
+  //获取节点,并往根节点搜索、在这里通过获取最高分粒子的轨迹，下次可能轨迹又不一样
   for(GMapping::GridSlamProcessor::TNode* n = best.node;
       n;
       n = n->parent)
@@ -774,7 +787,7 @@ SlamGMapping::updateMap(const sensor_msgs::LaserScan& scan)
     }
     matcher.invalidateActiveArea();//计算激活区域,标记位
     matcher.computeActiveArea(smap, n->pose, &((*n->reading)[0]));//计算激活区域，通过激光雷达的数据计算出来哪个地图栅格应该要被更新了。
-    matcher.registerScan(smap, n->pose, &((*n->reading)[0]));//计算激光束上所有点的熵,如果不更新地图,默认熵为0,只更新hit
+    matcher.registerScan(smap, n->pose, &((*n->reading)[0]));//计算激光束上所有点的熵,如果不更新地图,默认熵为0,只更新hit,返回熵值
   }
 
   // the map may have expanded, so resize ros message as well

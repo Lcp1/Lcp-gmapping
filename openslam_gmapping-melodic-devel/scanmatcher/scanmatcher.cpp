@@ -226,12 +226,12 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
 	m_activeAreaComputed=true;//标记已经完成计算动态地图
 }
 /**
- * @brief 计算激光束上所有点的熵,如果不更新地图,默认熵为0,只更新hit
+ * @brief 计算激光束上所有点的熵,如果不更新地图,默认熵为0,只更新hit,
  * 
  * @param map 地图
  * @param p 机器人坐标
  * @param readings 打了时间的激光点云
- * @return ** double 
+ * @return ** double 返回栅格的熵的值,
  */
 double ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, const double* readings){
 	if (!m_activeAreaComputed)
@@ -249,7 +249,7 @@ double ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, co
 	
 	// 计算点云角度
 	const double * angle=m_laserAngles+m_initialBeamsSkip;
-	double esum=0;
+	double esum=0;//熵的总和
 	//循环读取激光点云极坐标,并转化为xy坐标系
 	for (const double* r=readings+m_initialBeamsSkip; r<readings+m_laserBeams; r++, angle++)
 		if (m_generateMap){//如果生产地图
@@ -584,7 +584,7 @@ double ScanMatcher::optimize(OrientedPoint& _mean, ScanMatcher::CovarianceMatrix
 	_cov=cov;
 	return bestScore;
 }
-
+//将变量赋值到全局变量
 void ScanMatcher::setLaserParameters
 	(unsigned int beams, double* angles, const OrientedPoint& lpose){
 	/*if (m_laserAngles)

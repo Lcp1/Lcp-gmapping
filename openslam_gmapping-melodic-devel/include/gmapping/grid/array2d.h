@@ -23,23 +23,36 @@ template<class Cell, const bool debug=false> class Array2D{
 		inline const Cell& cell(int x, int y) const;
 		inline Cell& cell(int x, int y);
 		inline AccessibilityState cellState(int x, int y) const { return (AccessibilityState) (isInside(x,y)?(Inside|Allocated):Outside);}
+		//如果坐标在地图内返回11,表示已经分配,并且在地图内,都在0,表示在外部数据未分配
 		
-		inline bool isInside(const IntPoint& p) const { return isInside(p.x, p.y);}
+		inline bool isInside(const IntPoint& p) const { return isInside(p.x, p.y);}//判断是不是在内部,返回bool量
 		inline const Cell& cell(const IntPoint& p) const {return cell(p.x,p.y);}
 		inline Cell& cell(const IntPoint& p) {return cell(p.x,p.y);}
 		inline AccessibilityState cellState(const IntPoint& p) const { return cellState(p.x, p.y);}
 		
 		inline int getPatchSize() const{return 0;}
-		inline int getPatchMagnitude() const{return 0;}
+		inline int getPatchMagnitude() const{return 0;}//返回0??????????????????????????????
 		inline int getXSize() const {return m_xsize;}
 		inline int getYSize() const {return m_ysize;}
 		inline Cell** cells() {return m_cells;}
-		Cell ** m_cells;
+		Cell ** m_cells;//
+						// m_cells=new Cell*[m_xsize];//m_xsize个数组,指向Cell指针,即是每组的起始地址
+						// for (int i=0; i<m_xsize; i++)
+						// 	m_cells[i]=new Cell[m_ysize];//每个m_cells[i]分配Cell[m_ysize]个空间
 	protected:
 		int m_xsize, m_ysize;
 };
 
+// 有m_xsize个指针的数组，用m_cells指向其起始地址。 然后创建m_xsize个大小为m_ysize的Cell数组，
+// 通过类似m_cells[x][y]的形式访问二维数组中的元素
 
+/**
+ * @brief 将xsize定义为m_cell的数组容量,ysize定义为m_cell每个成员的空间
+ * 
+ * @param xsize 
+ * @param ysize 
+ * @return ** template <class Cell, const bool debug> 
+ */
 template <class Cell, const bool debug>
 //由int xsize行和int ysize列组成单个网格cell表
 Array2D<Cell,debug>::Array2D(int xsize, int ysize){
@@ -48,9 +61,9 @@ Array2D<Cell,debug>::Array2D(int xsize, int ysize){
 	m_xsize=xsize;
 	m_ysize=ysize;
 	if (m_xsize>0 && m_ysize>0){
-		m_cells=new Cell*[m_xsize];
+		m_cells=new Cell*[m_xsize];//m_xsize个数组,指向Cell指针,即是每组的起始地址
 		for (int i=0; i<m_xsize; i++)
-			m_cells[i]=new Cell[m_ysize];
+			m_cells[i]=new Cell[m_ysize];//每个m_cells[i]分配Cell[m_ysize]个空间
 	}
 	else{
 		m_xsize=m_ysize=0;

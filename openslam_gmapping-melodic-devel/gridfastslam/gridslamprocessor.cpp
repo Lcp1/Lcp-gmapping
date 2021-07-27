@@ -261,6 +261,7 @@ void GridSlamProcessor::setMotionModelParameters
     for (unsigned int i=0; i<m_beams; i++){
       angles[i]=rangeSensor->beams()[i].pose.theta;
     }
+    //将激光雷达参数赋值到全局变量
     m_matcher.setLaserParameters(m_beams, angles, rangeSensor->getPose());
     delete [] angles;
   }
@@ -283,9 +284,9 @@ void GridSlamProcessor::setMotionModelParameters
 
     m_particles.clear();
     TNode* node=new TNode(initialPose, 0, 0, 0);
-    ScanMatcherMap lmap(Point(xmin+xmax, ymin+ymax)*.5, xmax-xmin, ymax-ymin, delta);
-    for (unsigned int i=0; i<size; i++){
-      m_particles.push_back(Particle(lmap));
+    ScanMatcherMap lmap(Point(xmin+xmax, ymin+ymax)*.5, xmax-xmin, ymax-ymin, delta);//初始化每个粒子的地图
+    for (unsigned int i=0; i<size; i++){//初始化每个粒子
+      m_particles.push_back(Particle(lmap));//初始化地图装到粒子集合里面
       m_particles.back().pose=initialPose;
       m_particles.back().previousPose=initialPose;
       m_particles.back().setWeight(0);
@@ -295,7 +296,7 @@ void GridSlamProcessor::setMotionModelParameters
 		//		m_particles.back().node=new TNode(initialPose, 0, node, 0);
 
 		// we use the root directly
-		m_particles.back().node= node;
+		  m_particles.back().node= node;//每一个节点有一个node
     }
     m_neff=(double)size;
     m_count=0;
@@ -313,7 +314,7 @@ void GridSlamProcessor::setMotionModelParameters
   }
    ///////////////////////////:processScan////////////////////////////////////////// 
   /**
-   * @brief 
+   * @brief 首先对粒子进行运动更新,通过点云进行扫描匹配更新粒子,返回到m_particles   
    * 
    * @param reading 
    * @param adaptParticles 
@@ -395,119 +396,118 @@ void GridSlamProcessor::setMotionModelParameters
 
     // process a scan only if the robot has traveled a given distance or a certain amount of time has elapsed
     if (! m_count //第一次
-       || m_linearDistance>=m_linearThresholdDistance //超过阈值距离
-       || m_angularDistance>=m_angularThresholdDistance//超过阈值角度
-       || (period_ >= 0.0 && (reading.getTime() - last_update_time_) > period_)){//与上一桢时间相隔超过设定周期
-          last_update_time_ = reading.getTime();      //更新上一刻时钟
+        || m_linearDistance>=m_linearThresholdDistance //超过阈值距离
+        || m_angularDistance>=m_angularThresholdDistance//超过阈值角度
+        || (period_ >= 0.0 && (reading.getTime() - last_update_time_) > period_)){//与上一桢时间相隔超过设定周期
+            last_update_time_ = reading.getTime();      //更新上一刻时钟
 
-      if (m_outputStream.is_open()){//文件可读
-          m_outputStream << setiosflags(ios::fixed) << setprecision(6);
-          // 这是格式化输出流
-          // ios::fixed操作符定义在<iotream>中,意思是用小数点形式来显示数据，
-          // 有效数字位数默认为为6位，你可以通过setprecision(n)来修改显示有效数字的位数
-          m_outputStream << "FRAME " <<  m_readingCount;
-          m_outputStream << " " << m_linearDistance;
-          m_outputStream << " " << m_angularDistance << endl;
-      }
-      
-      if (m_infoStream)
-        	m_infoStream << "update frame " <<  m_readingCount << endl
-		     << "update ld=" << m_linearDistance << " ad=" << m_angularDistance << endl;
-      
-      // cerr与cout的主要区分就是，cout输出的信息可以重定向，而cerr只能输出到标准输出（显示器）上,不需要缓存
-      cerr << "Laser Pose= " << reading.getPose().x << " " << reading.getPose().y 
-	   << " " << reading.getPose().theta << endl;
-      
-      
-      //this is for converting the reading in a scan-matcher feedable form
-      assert(reading.size()==m_beams);//读取激光点云空间
-      double * plainReading = new double[m_beams];//创建点云对象,
-      for(unsigned int i=0; i<m_beams; i++){
-	        plainReading[i]=reading[i];//存储点云数据,用于扫描匹配
-      }
-      m_infoStream << "m_count " << m_count << endl;//第m_count桢的点云 
-      //激光数据复制???????
-      RangeReading* reading_copy = 
-              new RangeReading(reading.size(),
-                               &(reading[0]),
-                               static_cast<const RangeSensor*>(reading.getSensor()),
-                               reading.getTime());
+        if (m_outputStream.is_open()){//文件可读
+            m_outputStream << setiosflags(ios::fixed) << setprecision(6);
+            // 这是格式化输出流
+            // ios::fixed操作符定义在<iotream>中,意思是用小数点形式来显示数据，
+            // 有效数字位数默认为为6位，你可以通过setprecision(n)来修改显示有效数字的位数
+            m_outputStream << "FRAME " <<  m_readingCount;
+            m_outputStream << " " << m_linearDistance;
+            m_outputStream << " " << m_angularDistance << endl;
+           }
+        
+        if (m_infoStream)
+            m_infoStream << "update frame " <<  m_readingCount << endl
+            << "update ld=" << m_linearDistance << " ad=" << m_angularDistance << endl;
+        
+          // cerr与cout的主要区分就是，cout输出的信息可以重定向，而cerr只能输出到标准输出（显示器）上,不需要缓存
+        err << "Laser Pose= " << reading.getPose().x << " " << reading.getPose().y 
+        << " " << reading.getPose().theta << endl;
+        
+        
+        //this is for converting the reading in a scan-matcher feedable form
+        assert(reading.size()==m_beams);//读取激光点云空间
+        double * plainReading = new double[m_beams];//创建点云对象,
+        for(unsigned int i=0; i<m_beams; i++){
+              plainReading[i]=reading[i];//存储点云数据,用于扫描匹配
+              }
+        m_infoStream << "m_count " << m_count << endl;//第m_count桢的点云 
+       //激光数据复制???????
+       RangeReading* reading_copy =  new RangeReading(reading.size(),
+                                                        &(reading[0]),
+                                                        static_cast<const RangeSensor*>(reading.getSensor()),
+                                                        reading.getTime());
 
-      if (m_count>0){
-        //点云数据
-	  scanMatch(plainReading);//--------------------------扫描匹配---------------------------
-	  if (m_outputStream.is_open()){//如果文件可以打开
-	  m_outputStream << "LASER_READING "<< reading.size() << " ";//显示激光点云数量有效位数2位
-	  m_outputStream << setiosflags(ios::fixed) << setprecision(2);
-	  for (RangeReading::const_iterator b=reading.begin(); b!=reading.end(); b++){//发布点云
-	    m_outputStream << *b << " ";//
-	  }
-    //读取激光数据并显示
-	  OrientedPoint p=reading.getPose();
-	  m_outputStream << setiosflags(ios::fixed) << setprecision(6);
-	  m_outputStream << p.x << " " << p.y << " " << p.theta << " " << reading.getTime()<< endl;
-	  m_outputStream << "SM_UPDATE "<< m_particles.size() << " ";
-    // 打印粒子位姿
-	  for (ParticleVector::const_iterator it=m_particles.begin(); it!=m_particles.end(); it++){
-	    const OrientedPoint& pose=it->pose;
-	    m_outputStream << setiosflags(ios::fixed) << setprecision(3) <<  pose.x << " " << pose.y << " ";//坐标精度3位效数字
-	    m_outputStream << setiosflags(ios::fixed) << setprecision(6) <<  pose.theta << " " << it-> weight << " ";//角度精度6位有效数字
-	  }
-	  m_outputStream << endl;
-	}
-	  onScanmatchUpdate();// 没用到
-	
-		/**
-		 * @brief 由于scanmatch之中对粒子的权重进行了更新，
-     * 那么这时候 各个粒子的轨迹上的累计权重都需要重新计算更新树权重。
-     * 1、粒子权重归一化,并计算neff值；
-     * 2、重置树（将节点的累计权重置0，让节点等于自己的父节点）；
-     * 3、重新累加每个粒子的权重
-		 */
-	  updateTreeWeights(false);
-				
-      if (m_infoStream){
-        m_infoStream << "neff= " << m_neff  << endl;
-      }
-      if (m_outputStream.is_open()){
-        m_outputStream << setiosflags(ios::fixed) << setprecision(6);
-        m_outputStream << "NEFF " << m_neff << endl;
-      }
-      //粒子重采样，根据Neff的大小来进行重采样，不但进行了重采样，也对地图进行了更新
-      //重采样的过程里面有第二步的优化，
-      resample(plainReading, adaptParticles, reading_copy);
-	
-  } else {//如果文件不可以打开
-              m_infoStream << "Registering First Scan"<< endl;
-              for (ParticleVector::iterator it=m_particles.begin(); it!=m_particles.end(); it++){	
-              m_matcher.invalidateActiveArea();//设为需要进行计算激活区域
-              m_matcher.computeActiveArea(it->map, it->pose, plainReading);//计算激活区域，通过激光雷达的数据计算出来哪个地图栅格应该要被更新了。
-              m_matcher.registerScan(it->map, it->pose, plainReading);//计算激光束上所有点的熵,如果不更新地图,默认熵为0,只更新hit
+          if (m_count>0){
+          //点云数据
+          scanMatch(plainReading);//--------------------------扫描匹配---------------------------
+          if (m_outputStream.is_open()){//如果文件可以打开
+                m_outputStream << "LASER_READING "<< reading.size() << " ";//显示激光点云数量有效位数2位
+                m_outputStream << setiosflags(ios::fixed) << setprecision(2);
+                for (RangeReading::const_iterator b=reading.begin(); b!=reading.end(); b++){//发布点云
+                    m_outputStream << *b << " ";//
+                    }
+                //读取激光数据并显示
+                OrientedPoint p=reading.getPose();
+                m_outputStream << setiosflags(ios::fixed) << setprecision(6);
+                m_outputStream << p.x << " " << p.y << " " << p.theta << " " << reading.getTime()<< endl;
+                m_outputStream << "SM_UPDATE "<< m_particles.size() << " ";
+                // 打印粒子位姿
+                for (ParticleVector::const_iterator it=m_particles.begin(); it!=m_particles.end(); it++){
+                    const OrientedPoint& pose=it->pose;
+                    m_outputStream << setiosflags(ios::fixed) << setprecision(3) <<  pose.x << " " << pose.y << " ";//坐标精度3位效数字
+                    m_outputStream << setiosflags(ios::fixed) << setprecision(6) <<  pose.theta << " " << it-> weight << " ";//角度精度6位有效数字
+                    }
+                m_outputStream << endl;
+          }
+          onScanmatchUpdate();// 没用到
+        
+          /**
+           * @brief 由于scanmatch之中对粒子的权重进行了更新，
+           * 那么这时候 各个粒子的轨迹上的累计权重都需要重新计算更新树权重。
+           * 1、粒子权重归一化,并计算neff值；
+           * 2、重置树（将节点的累计权重置0，让节点等于自己的父节点）；
+           * 3、重新累加每个粒子的权重
+           */
+          updateTreeWeights(false);
               
-              // cyr: not needed anymore, particles refer to the root in the beginning!
-              TNode* node=new	TNode(it->pose, 0., it->node,  0);
-              //node->reading=0;
-              node->reading = reading_copy;
-              it->node=node;
-              
-            }
-      }
-      //		cerr  << "Tree: normalizing, resetting and propagating weights at the end..." ;
-      updateTreeWeights(false);
-      //		cerr  << ".done!" <<endl;
-      
-      delete [] plainReading;
-      m_lastPartPose=m_odoPose; //update the past pose for the next iteration
-      m_linearDistance=0;
-      m_angularDistance=0;
-      m_count++;
-      processed=true;
-      
-      //keep ready for the next step
-      for (ParticleVector::iterator it=m_particles.begin(); it!=m_particles.end(); it++){
-	it->previousPose=it->pose;
-      }
-      
+            if (m_infoStream){
+                m_infoStream << "neff= " << m_neff  << endl;
+              }
+            if (m_outputStream.is_open()){
+                m_outputStream << setiosflags(ios::fixed) << setprecision(6);
+                m_outputStream << "NEFF " << m_neff << endl;
+              }
+            //粒子重采样，根据Neff的大小来进行重采样，不但进行了重采样，也对地图进行了更新
+            //重采样的过程里面有第二步的优化，
+            resample(plainReading, adaptParticles, reading_copy);
+        
+          } else {//如果文件不可以打开
+                    m_infoStream << "Registering First Scan"<< endl;
+                    for (ParticleVector::iterator it=m_particles.begin(); it!=m_particles.end(); it++){	
+                        m_matcher.invalidateActiveArea();//设为需要进行计算激活区域
+                        m_matcher.computeActiveArea(it->map, it->pose, plainReading);//计算激活区域，通过激光雷达的数据计算出来哪个地图栅格应该要被更新了。
+                        m_matcher.registerScan(it->map, it->pose, plainReading);//计算激光束上所有点的熵,如果不更新地图,默认熵为0,只更新hit
+                        
+                        // cyr: not needed anymore, particles refer to the root in the beginning!
+                        TNode* node=new	TNode(it->pose, 0., it->node,  0);
+                        //node->reading=0;
+                        node->reading = reading_copy;
+                        it->node=node;
+                        
+                        }
+                }
+            //		cerr  << "Tree: normalizing, resetting and propagating weights at the end..." ;
+          updateTreeWeights(false);
+         //		cerr  << ".done!" <<endl;
+            
+         delete [] plainReading;
+         m_lastPartPose=m_odoPose; //update the past pose for the next iteration
+         m_linearDistance=0;
+         m_angularDistance=0;
+         m_count++;
+         processed=true;
+            
+         //keep ready for the next step
+         for (ParticleVector::iterator it=m_particles.begin(); it!=m_particles.end(); it++){
+              it->previousPose=it->pose;
+              }
+        
     }
     if (m_outputStream.is_open())
       m_outputStream << flush;
@@ -530,8 +530,8 @@ void GridSlamProcessor::setMotionModelParameters
     double bw=-std::numeric_limits<double>::max();
     for (unsigned int i=0; i<m_particles.size(); i++)
       if (bw<m_particles[i].weightSum){
-	bw=m_particles[i].weightSum;
-	bi=i;
+          bw=m_particles[i].weightSum;
+          bi=i;
       }
     return (int) bi;
   }

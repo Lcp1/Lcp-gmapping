@@ -6,7 +6,8 @@
 ////////////////////////////////scanMatch//////////////////////////////////////////////
 /**Just scan match every single particle.
 If the scan matching fails, the particle gets a default likelihood.*/
-// plainReading 点云数据                    
+// plainReading 点云数据
+//更新粒子位姿 返回到m_particles                 
 inline void GridSlamProcessor::scanMatch(const double* plainReading){
   // sample a new pose from each scan in the reference
   
@@ -58,7 +59,7 @@ inline void GridSlamProcessor::scanMatch(const double* plainReading){
     m_matcher.invalidateActiveArea();//设定地图动超出领域进行扩展地图标记
     // 计算有效区域，通过激光雷达的数据计算出来哪个地图栅格应该要被更新了。
     // (这里只是计算出来栅格的位置，然后插入地图中,并不对数据进行更新)
-    m_matcher.computeActiveArea(it->map, it->pose, plainReading);
+    m_matcher.computeActiveArea(it->map, it->pose, plainReading);//更新了m_cell
   }
   if (m_infoStream)
     m_infoStream << "Average Scan Matching Score=" << sumScore/m_particles.size() << std::endl;	//打印平均分

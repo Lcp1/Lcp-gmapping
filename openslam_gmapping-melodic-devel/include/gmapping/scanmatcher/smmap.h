@@ -17,9 +17,9 @@ struct PointAccumulator{
 	PointAccumulator(int i): acc(0,0), n(0), visits(0){assert(i==-1);}
 	/*after end*/
     inline void update(bool value, const Point& p=Point(0,0));
-	inline Point mean() const {return 1./n*Point(acc.x, acc.y);}
+	inline Point mean() const {return 1./n*Point(acc.x, acc.y);}//这个均值是不是就是机器人的位姿
 	inline operator double() const { return visits?(double)n*SIGHT_INC/(double)visits:-1; }
-	inline void add(const PointAccumulator& p) {acc=acc+p.acc; n+=p.n; visits+=p.visits; }//坐标叠加
+	inline void add(const PointAccumulator& p) {acc=acc+p.acc; n+=p.n; visits+=p.visits; }//p表示激光束经过栅格坐标吗？？？？？？？？？？？？？？？？？坐标叠加
 	static const PointAccumulator& Unknown();
 	static PointAccumulator* unknown_ptr;
 	FloatPoint acc;// //坐标累计值
@@ -37,12 +37,12 @@ void PointAccumulator::update(bool value, const Point& p){
 		visits++;
 }
 
-double PointAccumulator::entropy() const{//求熵(entropy)的函数
+double PointAccumulator::entropy() const{//求熵(entropy)的函数,通过记录累积的次数和访问的次数计算熵值
 	if (!visits)
 		return -log(.5);
 	if (n==visits || n==0)
 		return 0;
-	double x=(double)n*SIGHT_INC/(double)visits;
+	double x=(double)n*SIGHT_INC/(double)visits;//通过记录累积的次数和访问的次数计算熵值
 	return -( x*log(x)+ (1-x)*log(1-x) );
 }
 

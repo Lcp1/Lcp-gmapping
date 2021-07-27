@@ -38,28 +38,33 @@ class HierarchicalArray2D: public Array2D<autoptr< Array2D<Cell> > >{
 	protected:
 		virtual Array2D<Cell> * createPatch(const IntPoint& p) const;
 		PointSet m_activeArea;
+		// int patchMagnitude=5
 		int m_patchMagnitude;//第一级二维数组每个元素的大小量级   2的m_patchMagnitude次方等于Array2D<Cell>
-		int m_patchSize;//Array2D<Cell> 边长,比如8*8个cell
+		int m_patchSize;//Array2D<Cell> 边长,比如8*8个cell  //m_patchSize = 1<<m_patchMagnitude 
+		// 二进制1往左移动移动一位就是2,二位就是4,8,16....
 };
 
 template <class Cell>
 HierarchicalArray2D<Cell>::HierarchicalArray2D(int xsize, int ysize, int patchMagnitude) 
   :Array2D<autoptr< Array2D<Cell> > >::Array2D((xsize>>patchMagnitude), (ysize>>patchMagnitude)){
-	m_patchMagnitude=patchMagnitude;
-	m_patchSize=1<<m_patchMagnitude;
+	m_patchMagnitude=patchMagnitude;  //int patchMagnitude=5
+	m_patchSize=1<<m_patchMagnitude;//二进制1往左移动移动一位就是2,二位就是4,8,16....
 }
 
 template <class Cell>
 HierarchicalArray2D<Cell>::HierarchicalArray2D(const HierarchicalArray2D& hg)
-  :Array2D<autoptr< Array2D<Cell> > >::Array2D((hg.m_xsize>>hg.m_patchMagnitude), (hg.m_ysize>>hg.m_patchMagnitude))  // added by cyrill: if you have a resize error, check this again
+  :Array2D<autoptr< Array2D<Cell> > >::Array2D((hg.m_xsize>>hg.m_patchMagnitude), (hg.m_ysize>>hg.m_patchMagnitude)) 
+   // added by cyrill: if you have a resize error, check this again
 {
 	this->m_xsize=hg.m_xsize;
 	this->m_ysize=hg.m_ysize;
 	this->m_cells=new autoptr< Array2D<Cell> >*[this->m_xsize];
 	for (int x=0; x<this->m_xsize; x++){
 		this->m_cells[x]=new autoptr< Array2D<Cell> >[this->m_ysize];
+		//每个this->m_cells[x] 空间大小为 this->m_ysize
+
 		for (int y=0; y<this->m_ysize; y++)
-			this->m_cells[x][y]=hg.m_cells[x][y];
+			this->m_cells[x][y]=hg.m_cells[x][y];//赋值
 	}
 	this->m_patchMagnitude=hg.m_patchMagnitude;
 	this->m_patchSize=hg.m_patchSize;
@@ -119,7 +124,7 @@ HierarchicalArray2D<Cell>& HierarchicalArray2D<Cell>::operator=(const Hierarchic
 template <class Cell>
 void HierarchicalArray2D<Cell>::setActiveArea(const typename HierarchicalArray2D<Cell>::PointSet& aa, bool patchCoords){
 	m_activeArea.clear();
-	for (PointSet::const_iterator it= aa.begin(); it!=aa.end(); it++){
+	for (PointSet::const_iterator it= aa.begin(); it!=aa.end(); it++){//按照栅格序号读取每一个栅格
 		IntPoint p;
 		if (patchCoords)
 			p=*it;
@@ -155,14 +160,14 @@ void HierarchicalArray2D<Cell>::allocActiveArea(){
 		} else{	
 			patch=new Array2D<Cell>(*ptr);
 		}
-		this->m_cells[it->x][it->y]=autoptr< Array2D<Cell> >(patch);//将活动区域存到网格去
+		this->m_cells[it->x][it->y]=autoptr< Array2D<Cell> >(patch);//patch表示为空间,将活动区域存到网格去
 	}
 }
-
+//通过指针指向ptr
 template <class Cell>
 bool HierarchicalArray2D<Cell>::isAllocated(int x, int y) const{
 	IntPoint c=patchIndexes(x,y);
-	autoptr< Array2D<Cell> >& ptr=this->m_cells[c.x][c.y];
+	autoptr< Array2D<Cell> >& ptr=this->m_cells[c.x][c.y];//ptr为this->m_cells[c.x][c.y]内容
 	return (ptr != 0);
 }
 
@@ -178,8 +183,8 @@ Cell& HierarchicalArray2D<Cell>::cell(int x, int y){
 	IntPoint c=patchIndexes(x,y);
 	assert(this->isInside(c.x, c.y));
 	if (!this->m_cells[c.x][c.y]){
-		Array2D<Cell>* patch=createPatch(IntPoint(x,y));
-		this->m_cells[c.x][c.y]=autoptr< Array2D<Cell> >(patch);
+		Array2D<Cell>* patch=createPatch(IntPoint(x,y));//patch指向右侧新建的patch
+		this->m_cells[c.x][c.y]=autoptr< Array2D<Cell> >(patch);//cell 分配网格空间大小为patch
 		//cerr << "!!! FATAL: your dick is going to fall down" << endl;.....无语了
 	}
 	autoptr< Array2D<Cell> >& ptr=this->m_cells[c.x][c.y];
